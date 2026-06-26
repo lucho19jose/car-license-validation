@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env / secrets (NO subir claves: API_KEY, HMAC_SECRET, TWOCAPTCHA_KEY)
+.env
+**/.env
+*.local
+
+# Datos generados (SQLite + reportes)
+data/
+**/data/
+*.log
+
+# Playwright
+playwright-report/
+test-results/
+**/.cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python (jetson)
+__pycache__/
+*.pyc
+.venv/
+venv/

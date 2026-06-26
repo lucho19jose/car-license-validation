@@ -1,0 +1,20 @@
+{
+  "name": "placas-server",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Consolidador de datos vehiculares (SUNARP/SOAT/MTC) para reportes en tiempo real desde un Jetson ALPR",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "send": "node test/send.mjs",
+    "inspect": "node test/inspect.mjs",
+    "inspect:sunarp": "node test/inspect-sunarp.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "playwright": "^1.61.1"
+  }
+}
