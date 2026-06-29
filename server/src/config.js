@@ -68,7 +68,13 @@ export const config = {
     url: process.env.MTC_URL || 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
     headless: process.env.HEADLESS !== 'false',
     navTimeoutMs: parseInt(process.env.NAV_TIMEOUT_MS || '30000', 10),
-    maxCaptchaAttempts: parseInt(process.env.MTC_CAPTCHA_ATTEMPTS || '4', 10),
+    // Margen amplio: además de reintentar captchas fallidos, puede necesitar
+    // varias pasadas válidas para confirmar un "sin CITV" (ver confirmEmpty).
+    maxCaptchaAttempts: parseInt(process.env.MTC_CAPTCHA_ATTEMPTS || '5', 10),
+    // Nº de respuestas vacías (orStatus=true) INDEPENDIENTES exigidas para declarar
+    // "sin CITV". Evita un falso N/D si un captcha mal resuelto colara una lista
+    // vacía. 1 = confiar en orStatus sin confirmar (más barato, 1 captcha menos).
+    confirmEmpty: parseInt(process.env.MTC_CONFIRM_EMPTY || '2', 10),
   },
 
   paths: {

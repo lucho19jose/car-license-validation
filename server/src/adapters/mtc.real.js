@@ -6,6 +6,7 @@ import { config } from '../config.js'
 
 // ───────────────────────────────────────────────────────────────────────────
 // Adapter REAL de MTC (revisión técnica / CITV) — CALIBRADO 26/06/2026.
+// Endurecido 28/06/2026 (anti falso "N/D" por captcha).
 //
 // Hallazgos:
 //  • Portal ASP.NET (rec.mtc.gob.pe/Citv/ArConsultaCitv), captcha de IMAGEN
@@ -13,6 +14,15 @@ import { config } from '../config.js'
 //  • Al buscar dispara: GET /CITV/JrCITVConsultarFiltro?pArrParametros=1|{PLACA}||{CAPTCHA}
 //    Respuesta: { orStatus, orResult: ["<json-string array>", count] }
 //  • Conducimos la página real, resolvemos la imagen y leemos esa respuesta JSON.
+//
+// Robustez (porqué de cada guarda):
+//  • esperarDataUri: el <img> del captcha puede inyectarse async; leer su src
+//    antes de tiempo manda a 2captcha un base64 vacío (mismo bug que tuvo SOAT).
+//  • confirm-empty: orStatus=true + lista vacía DEBERÍA significar "no tiene CITV",
+//    pero un captcha mal resuelto que el portal aceptara igual daría un falso
+//    vacío → un falso "N/D". Antes de declarar "sin CITV" lo CONFIRMAMOS con
+//    captchas independientes (config.mtc.confirmEmpty). Un resultado CON datos se
+//    da por bueno de inmediato (no se puede fabricar por azar).
 // ───────────────────────────────────────────────────────────────────────────
 
 const SEL = {
@@ -25,11 +35,21 @@ const API_CONSULTA = '/CITV/JrCITVConsultarFiltro'
 
 export function consultarMtcReal(plate) {
   return withTiming(async () => {
-    let lastErr
     const max = config.mtc.maxCaptchaAttempts
+    const needEmpty = Math.max(1, config.mtc.confirmEmpty)
+    let lastErr
+    let emptyHits = 0 // nº de pasadas con captcha válido (orStatus=true) que dieron vacío
     for (let i = 1; i <= max; i++) {
       try {
-        return await intentar(plate)
+        const docs = await intentar(plate)
+        if (docs.length > 0) return mapResultado(docs) // hay CITV → resultado fiable, listo
+
+        // orStatus=true pero sin registros → posible "sin CITV". Confirmamos con
+        // un captcha independiente para descartar un falso vacío por mala lectura.
+        emptyHits++
+        if (emptyHits >= needEmpty) return mapResultado([]) // confirmado: N/D genuino
+        console.warn(`[mtc] vacío ${emptyHits}/${needEmpty} — confirmando "sin CITV" con captcha nuevo…`)
+        await backoff(i)
       } catch (err) {
         lastErr = err
         if (!isRetryable(err) || i === max) break
@@ -37,10 +57,33 @@ export function consultarMtcReal(plate) {
         await backoff(i)
       }
     }
-    throw lastErr
+
+    // Agotados los intentos: si AL MENOS una pasada con captcha válido dio vacío,
+    // reportamos N/D (no confirmado del todo) en vez de tumbar la fuente. Si nunca
+    // logramos una respuesta válida, propagamos el error → la fuente queda en fail.
+    if (emptyHits > 0) {
+      console.warn(`[mtc] N/D sin confirmar del todo (${emptyHits}/${needEmpty} vacíos)`)
+      return mapResultado([])
+    }
+    throw lastErr || new Error('mtc: sin resultado tras agotar intentos')
   })
 }
 
+// Espera a que el <img> del captcha tenga un data URI válido (la página puede
+// inyectarlo async). Devuelve el src; lanza error reintentable si no aparece.
+async function esperarDataUri(locator, page, { tries = 40, intervalMs = 200 } = {}) {
+  for (let i = 0; i < tries; i++) {
+    const src = await locator.getAttribute('src').catch(() => null)
+    if (src && src.startsWith('data:') && src.length > 200) return src
+    await page.waitForTimeout(intervalMs)
+  }
+  throw new Error('captcha: la imagen de MTC no se cargó a tiempo (src vacío)')
+}
+
+// Una pasada completa: navega, resuelve el captcha y devuelve el array de
+// documentos (puede ser vacío si orStatus=true sin registros). Cada pasada usa un
+// contexto/captcha nuevos → las confirmaciones son independientes. Lanza error
+// reintentable si el captcha se rechaza o no llega respuesta de la API.
 async function intentar(plate) {
   const ctx = await newContext()
   const page = await ctx.newPage()
@@ -50,10 +93,18 @@ async function intentar(plate) {
 
     await page.fill(SEL.placa, plate)
 
-    // Captcha de imagen: tomamos el data URI directo
-    const src = await page.locator(SEL.captchaImg).getAttribute('src')
-    const b64 = (src || '').includes(',') ? src.split(',')[1].trim() : src
-    const solution = await solveImageCaptcha(b64)
+    // Esperar el data URI antes de leerlo (si no, 2captcha recibiría un src vacío).
+    const src = await esperarDataUri(page.locator(SEL.captchaImg), page)
+    const b64 = src.includes(',') ? src.split(',')[1].trim() : src
+    // 2captcha a veces devuelve espacios; saneamos. Si queda vacío, no enviamos un
+    // submit garantizado-incorrecto: lanzamos error reintentable (captcha nuevo).
+    const solution = (await solveImageCaptcha(b64)).replace(/\s+/g, '')
+    if (!solution) throw new Error('captcha: 2captcha devolvió solución vacía')
+    // El captcha de MTC es SIEMPRE numérico; si 2captcha devolvió letras es una mala
+    // lectura garantizada (visto en diagnóstico) → pedimos uno nuevo sin gastar el submit.
+    if (!/^\d+$/.test(solution)) {
+      throw new Error(`captcha: solución no numérica "${solution}" (mala lectura, descartada)`)
+    }
     await page.fill(SEL.captchaInput, solution)
 
     const respPromise = page.waitForResponse(
@@ -72,12 +123,12 @@ async function intentar(plate) {
 
     const payload = await resp.json()
     // El captcha correcto hace orStatus=true; uno incorrecto, orStatus=false/null.
-    //  · orStatus=false  → captcha rechazado → reintentar con uno nuevo.
-    //  · orStatus=true + lista vacía → la placa NO tiene CITV registrada (válido, N/D).
+    //  · orStatus=false → captcha rechazado → reintentar con uno nuevo.
+    //  · orStatus=true  → captcha aceptado; la lista puede venir vacía (sin CITV).
     if (payload?.orStatus !== true) {
       throw new Error('captcha: MTC rechazó el captcha (orStatus=false)')
     }
-    return mapResultado(payload)
+    return extraerDocs(payload)
   } finally {
     await page.close()
     await ctx.close()
@@ -94,9 +145,8 @@ function extraerDocs(payload) {
   }
 }
 
-// orResult[0] es un STRING JSON con el array de certificados/inspecciones.
-function mapResultado(payload) {
-  let arr = extraerDocs(payload)
+// Mapea el array de documentos del MTC a nuestro formato (o N/D si viene vacío).
+function mapResultado(arr) {
   if (!Array.isArray(arr) || arr.length === 0) {
     return { result: 'N/D', validUntil: 'N/D', entity: 'N/D', valid: false, history: [] }
   }
