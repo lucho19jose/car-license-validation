@@ -59,7 +59,7 @@ export const config = {
     url: process.env.SOAT_URL || 'https://www.apeseg.org.pe/consultas-soat/',
     headless: process.env.HEADLESS !== 'false',
     navTimeoutMs: parseInt(process.env.NAV_TIMEOUT_MS || '30000', 10),
-    maxCaptchaAttempts: parseInt(process.env.SOAT_CAPTCHA_ATTEMPTS || '3', 10),
+    maxCaptchaAttempts: parseInt(process.env.SOAT_CAPTCHA_ATTEMPTS || '4', 10),
   },
 
   // MTC — consulta de revisiones técnicas / CITV (Día 3, CALIBRADO 26/06/2026)
@@ -68,7 +68,7 @@ export const config = {
     url: process.env.MTC_URL || 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
     headless: process.env.HEADLESS !== 'false',
     navTimeoutMs: parseInt(process.env.NAV_TIMEOUT_MS || '30000', 10),
-    maxCaptchaAttempts: parseInt(process.env.MTC_CAPTCHA_ATTEMPTS || '3', 10),
+    maxCaptchaAttempts: parseInt(process.env.MTC_CAPTCHA_ATTEMPTS || '4', 10),
   },
 
   paths: {

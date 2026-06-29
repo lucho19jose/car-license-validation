@@ -14,7 +14,16 @@ export function normalize(plate, { sunarp, soat, mtc }) {
     status: v.status ?? null,
     owner: v.owner ?? null,
     vin: v.vin ?? null,
+    serie: v.serie ?? null,
     engineNumber: v.engineNumber ?? null,
+
+    // Extras de SUNARP (solo presentes en modo real) + imagen oficial.
+    sede: v.sede ?? null,
+    numPartida: v.numPartida ?? null,
+    placaAnterior: v.placaAnterior ?? null,
+    anotaciones: v.anotaciones ?? null,
+    sunarpImage: v.imageBase64 ?? null,
+    sunarpOwnerYRatio: v.ownerYRatio ?? null,
 
     // Spread conserva TODOS los campos extra (historial, dirección, observaciones…)
     // garantizando que existan las claves canónicas.

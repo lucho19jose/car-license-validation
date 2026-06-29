@@ -12,9 +12,11 @@
     "inspect:sunarp": "node test/inspect-sunarp.mjs"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "playwright": "^1.61.1"
+    "jimp": "^0.22.12",
+    "playwright": "^1.61.1",
+    "tesseract.js": "^5.1.1"
   }
 }

@@ -15,6 +15,29 @@ export function startWorker() {
   console.log('[worker] listo (cola en memoria, concurrencia 3)')
 }
 
+// Tope de tiempo por fuente. Si la consulta tarda más, devuelve un resultado
+// "fail" (la fuente queda en missingSections) en vez de bloquear el job. El
+// adapter colgado sigue en background pero su resultado se ignora.
+const SOURCE_TIMEOUT_MS = parseInt(process.env.SOURCE_TIMEOUT_MS || '90000', 10)
+function withSourceTimeout(name, fn) {
+  const start = Date.now()
+  return Promise.race([
+    fn(),
+    new Promise((resolve) =>
+      setTimeout(
+        () =>
+          resolve({
+            ok: false,
+            data: null,
+            error: `${name}: tope de ${SOURCE_TIMEOUT_MS}ms superado`,
+            timingMs: Date.now() - start,
+          }),
+        SOURCE_TIMEOUT_MS
+      )
+    ),
+  ])
+}
+
 async function processJob(job) {
   const { jobId, plate, callbackUrl } = job
   mark(jobId, 'PROCESSING')
@@ -31,10 +54,12 @@ async function processJob(job) {
     }
 
     // 2) consultar las 3 fuentes en paralelo, cada una con su rate-limit por fuente
+    //    y un TOPE de tiempo: si una fuente se cuelga (captcha que 2captcha no
+    //    resuelve, sitio caído…) se marca fail y no bloquea el job indefinidamente.
     const [sunarp, soat, mtc] = await Promise.all([
-      limited('sunarp', () => consultarSunarp(plate)),
-      limited('soat', () => consultarSoat(plate)),
-      limited('mtc', () => consultarMtc(plate)),
+      withSourceTimeout('sunarp', () => limited('sunarp', () => consultarSunarp(plate))),
+      withSourceTimeout('soat', () => limited('soat', () => consultarSoat(plate))),
+      withSourceTimeout('mtc', () => limited('mtc', () => consultarMtc(plate))),
     ])
 
     // 3) normalizar al DTO único

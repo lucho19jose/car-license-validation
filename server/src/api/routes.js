@@ -53,11 +53,21 @@ router.get('/api/v1/reports/:id', (req, res) => {
 
   const htmlUrl = row.status === 'COMPLETED' ? `/reports/${row.id}.html` : null
   const pdfUrl = row.pdf_path ? `/reports/${row.id}.pdf` : null
+
+  // La imagen de SUNARP (base64 ~150KB) va incrustada en el reporte; no la
+  // devolvemos en el JSON de la API para mantenerlo liviano.
+  let result = row.result_json ? JSON.parse(row.result_json) : null
+  if (result && result.sunarpImage) {
+    delete result.sunarpImage
+    delete result.sunarpOwnerYRatio
+    result.sunarpImageEmbedded = true
+  }
+
   res.json({
     job_id: row.id,
     plate: row.plate,
     status: row.status,
-    result: row.result_json ? JSON.parse(row.result_json) : null,
+    result,
     report_url: pdfUrl || htmlUrl, // preferimos PDF
     html_url: htmlUrl,
     pdf_url: pdfUrl,

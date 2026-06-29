@@ -71,6 +71,12 @@ async function intentar(plate) {
     if (!resp.ok()) throw new Error('MTC API status ' + resp.status())
 
     const payload = await resp.json()
+    // El captcha correcto hace orStatus=true; uno incorrecto, orStatus=false/null.
+    //  · orStatus=false  → captcha rechazado → reintentar con uno nuevo.
+    //  · orStatus=true + lista vacía → la placa NO tiene CITV registrada (válido, N/D).
+    if (payload?.orStatus !== true) {
+      throw new Error('captcha: MTC rechazó el captcha (orStatus=false)')
+    }
     return mapResultado(payload)
   } finally {
     await page.close()
@@ -78,15 +84,19 @@ async function intentar(plate) {
   }
 }
 
-// orResult[0] es un STRING JSON con el array de certificados/inspecciones.
-function mapResultado(payload) {
-  let arr = []
+// Extrae el array de documentos de la respuesta (orResult[0] es un STRING JSON).
+function extraerDocs(payload) {
   try {
     const raw = payload?.orResult?.[0]
-    arr = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : []
+    return typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : []
   } catch {
-    arr = []
+    return []
   }
+}
+
+// orResult[0] es un STRING JSON con el array de certificados/inspecciones.
+function mapResultado(payload) {
+  let arr = extraerDocs(payload)
   if (!Array.isArray(arr) || arr.length === 0) {
     return { result: 'N/D', validUntil: 'N/D', entity: 'N/D', valid: false, history: [] }
   }

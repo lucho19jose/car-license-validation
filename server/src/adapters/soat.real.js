@@ -45,6 +45,17 @@ export function consultarSoatReal(plate) {
   })
 }
 
+// Espera hasta que un <img> tenga un src "data:..." válido (la SPA lo inyecta async).
+// Devuelve el src; lanza si no aparece dentro del timeout (error reintentable).
+async function esperarDataUri(locator, page, { tries = 40, intervalMs = 200 } = {}) {
+  for (let i = 0; i < tries; i++) {
+    const src = await locator.getAttribute('src').catch(() => null)
+    if (src && src.startsWith('data:') && src.length > 200) return src
+    await page.waitForTimeout(intervalMs)
+  }
+  throw new Error('captcha: la imagen no se cargó a tiempo (src vacío)')
+}
+
 async function intentar(plate) {
   const ctx = await newContext()
   const page = await ctx.newPage()
@@ -56,9 +67,11 @@ async function intentar(plate) {
 
     await frame.locator(SEL.placa).fill(plate)
 
-    // Captcha de imagen: tomamos el data URI directo (mejor fidelidad que screenshot)
-    const src = await frame.locator(SEL.captchaImg).getAttribute('src')
-    const b64 = (src || '').includes(',') ? src.split(',')[1] : src
+    // Captcha de imagen: la webapp (SPA) inyecta el data URI de forma asíncrona,
+    // así que esperamos a que el <img> tenga un src data: válido antes de leerlo.
+    // Si no, capturaríamos un src vacío → 2captcha responde ERROR_UPLOAD.
+    const src = await esperarDataUri(frame.locator(SEL.captchaImg), page)
+    const b64 = src.includes(',') ? src.split(',')[1] : src
     const solution = await solveImageCaptcha(b64)
     await frame.locator(SEL.captchaInput).fill(solution)
 

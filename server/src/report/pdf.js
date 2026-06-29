@@ -2,13 +2,14 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { config } from '../config.js'
 import { newContext } from '../adapters/browser.js'
-import { anonymizeDto } from '../core/anon.js'
+import { anonymizeDto, sunarpImageDataUri } from '../core/anon.js'
 
 // Genera el reporte: siempre HTML, y además PDF (Playwright) si está habilitado.
 // Devuelve { htmlPath, pdfPath } (pdfPath = null si falla o está deshabilitado).
 export async function generateReport(jobId, dto, meta) {
   // Anonimiza el propietario en las FIGURAS si ANONYMIZE_OWNER=true (la DB guarda el crudo)
-  const html = render(anonymizeDto(dto), meta)
+  const sunarpImg = await sunarpImageDataUri(dto).catch(() => null)
+  const html = render(anonymizeDto(dto), meta, sunarpImg)
   const htmlPath = path.join(config.paths.reports, `${jobId}.html`)
   await fs.writeFile(htmlPath, html, 'utf8')
 
@@ -69,7 +70,7 @@ function histTable(cols, rows) {
   return `<table class="hist"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
 }
 
-function render(dto, meta) {
+function render(dto, meta, sunarpImg) {
   const risk = RISK_COLORS[dto.riskScore] || '#6b7280'
   const soat = dto.soat || {}
   const itv = dto.inspection || {}
@@ -105,6 +106,7 @@ function render(dto, meta) {
   table.hist th { width: auto; background: #f8fafc; font-size: 12px; }
   table.hist td { font-size: 12px; }
   .muted { color: #94a3b8; font-size: 12px; margin: 4px 0 0; }
+  .doc-img { display: block; max-width: 380px; width: 100%; margin: 6px 0 4px; border: 1px solid #e2e8f0; border-radius: 8px; }
   footer { padding: 14px 28px; font-size: 11px; color: #94a3b8; border-top: 1px solid #eef2f7; }
 </style>
 </head>
@@ -128,7 +130,18 @@ function render(dto, meta) {
         ${row('Propietario', dto.owner)}
         ${row('VIN / Serie', dto.vin)}
         ${row('N° Motor', dto.engineNumber)}
+        ${dto.placaAnterior ? row('Placa anterior', dto.placaAnterior) : ''}
+        ${dto.anotaciones ? row('Anotaciones', dto.anotaciones) : ''}
+        ${dto.sede ? row('Sede registral', dto.sede) : ''}
+        ${dto.numPartida ? row('N° Partida registral', dto.numPartida) : ''}
       </table>
+      ${
+        sunarpImg
+          ? `<p class="muted">Tarjeta oficial SUNARP${
+              config.anonymizeOwner ? ' · propietario anonimizado (Ley N° 29733)' : ''
+            }</p><img class="doc-img" src="${sunarpImg}" alt="Datos del vehículo (SUNARP)" />`
+          : ''
+      }
 
       <h2>SOAT (APESEG)</h2>
       <table>
