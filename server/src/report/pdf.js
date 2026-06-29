@@ -74,6 +74,11 @@ function render(dto, meta, sunarpImg) {
   const risk = RISK_COLORS[dto.riskScore] || '#6b7280'
   const soat = dto.soat || {}
   const itv = dto.inspection || {}
+  // ¿Falló la fuente? Distinto de "consultada pero sin registro": una fuente en
+  // 'fail' NO se pudo leer, así que su sección vacía no debe interpretarse como N/D.
+  const failed = (s) => dto.sources?.[s] === 'fail'
+  const failNote = (name) =>
+    `<p class="fail-note">⚠ No se pudo consultar ${esc(name)} en esta corrida (la fuente falló o no respondió). Esta sección puede estar incompleta — no asumir “sin registro”.</p>`
   const cacheTag = meta.isCached
     ? `<span class="tag tag-cache">cache · ${esc(meta.dataAgeHours)}h</span>`
     : `<span class="tag tag-live">consulta en vivo</span>`
@@ -106,6 +111,7 @@ function render(dto, meta, sunarpImg) {
   table.hist th { width: auto; background: #f8fafc; font-size: 12px; }
   table.hist td { font-size: 12px; }
   .muted { color: #94a3b8; font-size: 12px; margin: 4px 0 0; }
+  .fail-note { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 8px 12px; border-radius: 8px; font-size: 13px; margin: 6px 0; }
   .doc-img { display: block; max-width: 380px; width: 100%; margin: 6px 0 4px; border: 1px solid #e2e8f0; border-radius: 8px; }
   footer { padding: 14px 28px; font-size: 11px; color: #94a3b8; border-top: 1px solid #eef2f7; }
 </style>
@@ -121,6 +127,7 @@ function render(dto, meta, sunarpImg) {
     </header>
     <div class="body">
       <h2>Identificación (SUNARP)</h2>
+      ${failed('sunarp') ? failNote('SUNARP') : ''}
       <table>
         ${row('Marca', dto.make)}
         ${row('Modelo', dto.model)}
@@ -144,6 +151,7 @@ function render(dto, meta, sunarpImg) {
       }
 
       <h2>SOAT (APESEG)</h2>
+      ${failed('soat') ? failNote('SOAT') : ''}
       <table>
         ${row('Aseguradora', soat.insurer)}
         ${row('N° Póliza', soat.policyNumber)}
@@ -168,6 +176,7 @@ function render(dto, meta, sunarpImg) {
       }
 
       <h2>Revisión Técnica (MTC)</h2>
+      ${failed('mtc') ? failNote('MTC') : ''}
       <table>
         ${row('Resultado', itv.result)}
         ${row('Estado', itv.estado)}
