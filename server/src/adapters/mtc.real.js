@@ -34,39 +34,49 @@ const SEL = {
 const API_CONSULTA = '/CITV/JrCITVConsultarFiltro'
 
 export function consultarMtcReal(plate) {
-  return withTiming(async () => {
-    const max = config.mtc.maxCaptchaAttempts
-    const needEmpty = Math.max(1, config.mtc.confirmEmpty)
-    let lastErr
-    let emptyHits = 0 // nº de pasadas con captcha válido (orStatus=true) que dieron vacío
-    for (let i = 1; i <= max; i++) {
-      try {
-        const docs = await intentar(plate)
-        if (docs.length > 0) return mapResultado(docs) // hay CITV → resultado fiable, listo
+  return withTiming(() =>
+    resolverMtc((attempt) => intentar(plate, attempt), {
+      max: config.mtc.maxCaptchaAttempts,
+      needEmpty: Math.max(1, config.mtc.confirmEmpty),
+    })
+  )
+}
 
-        // orStatus=true pero sin registros → posible "sin CITV". Confirmamos con
-        // un captcha independiente para descartar un falso vacío por mala lectura.
-        emptyHits++
-        if (emptyHits >= needEmpty) return mapResultado([]) // confirmado: N/D genuino
-        console.warn(`[mtc] vacío ${emptyHits}/${needEmpty} — confirmando "sin CITV" con captcha nuevo…`)
-        await backoff(i)
-      } catch (err) {
-        lastErr = err
-        if (!isRetryable(err) || i === max) break
-        console.warn(`[mtc] intento ${i}/${max} falló: ${err.message}`)
-        await backoff(i)
-      }
-    }
+// Orquesta los intentos: aplica reintentos de captcha y confirm-empty sobre una
+// función `intentar(attempt) -> docs[]` (o que lanza error reintentable). Pura y
+// exportada para poder testear la lógica sin navegador/captcha (test/debug-mtc-logic.mjs).
+//  · docs con elementos        → resultado fiable, se devuelve de inmediato.
+//  · docs vacío (orStatus=true) → "sin CITV", pero se CONFIRMA con `needEmpty`
+//    pasadas independientes antes de declararlo (evita falso N/D por captcha).
+//  · error reintentable         → backoff y otra pasada (hasta `max`).
+export async function resolverMtc(intentar, { max, needEmpty, wait = backoff }) {
+  let lastErr
+  let emptyHits = 0 // nº de pasadas con captcha válido (orStatus=true) que dieron vacío
+  for (let i = 1; i <= max; i++) {
+    try {
+      const docs = await intentar(i)
+      if (docs.length > 0) return mapResultado(docs) // hay CITV → listo
 
-    // Agotados los intentos: si AL MENOS una pasada con captcha válido dio vacío,
-    // reportamos N/D (no confirmado del todo) en vez de tumbar la fuente. Si nunca
-    // logramos una respuesta válida, propagamos el error → la fuente queda en fail.
-    if (emptyHits > 0) {
-      console.warn(`[mtc] N/D sin confirmar del todo (${emptyHits}/${needEmpty} vacíos)`)
-      return mapResultado([])
+      emptyHits++
+      if (emptyHits >= needEmpty) return mapResultado([]) // confirmado: N/D genuino
+      console.warn(`[mtc] vacío ${emptyHits}/${needEmpty} — confirmando "sin CITV" con captcha nuevo…`)
+      await wait(i)
+    } catch (err) {
+      lastErr = err
+      if (!isRetryable(err) || i === max) break
+      console.warn(`[mtc] intento ${i}/${max} falló: ${err.message}`)
+      await wait(i)
     }
-    throw lastErr || new Error('mtc: sin resultado tras agotar intentos')
-  })
+  }
+
+  // Agotados los intentos: si AL MENOS una pasada con captcha válido dio vacío,
+  // reportamos N/D (no confirmado del todo) en vez de tumbar la fuente. Si nunca
+  // logramos una respuesta válida, propagamos el error → la fuente queda en fail.
+  if (emptyHits > 0) {
+    console.warn(`[mtc] N/D sin confirmar del todo (${emptyHits}/${needEmpty} vacíos)`)
+    return mapResultado([])
+  }
+  throw lastErr || new Error('mtc: sin resultado tras agotar intentos')
 }
 
 // Espera a que el <img> del captcha tenga un data URI válido (la página puede
