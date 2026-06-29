@@ -72,7 +72,10 @@ async function intentar(plate) {
     // Si no, capturaríamos un src vacío → 2captcha responde ERROR_UPLOAD.
     const src = await esperarDataUri(frame.locator(SEL.captchaImg), page)
     const b64 = src.includes(',') ? src.split(',')[1] : src
-    const solution = await solveImageCaptcha(b64)
+    // 2captcha a veces devuelve espacios; saneamos. Si queda vacío no enviamos un
+    // submit garantizado-incorrecto: lanzamos error reintentable (captcha nuevo).
+    const solution = (await solveImageCaptcha(b64)).replace(/\s+/g, '')
+    if (!solution) throw new Error('captcha: 2captcha devolvió solución vacía (SOAT)')
     await frame.locator(SEL.captchaInput).fill(solution)
 
     // Disparamos y capturamos la respuesta de la API de certificados

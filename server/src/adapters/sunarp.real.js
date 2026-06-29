@@ -157,8 +157,15 @@ async function intentar(plate) {
   const resp = await getDatosVehiculo(plate, ip, token)
 
   if (resp.cod !== 1) {
-    // cod != 1 → captcha/token rechazado o placa no encontrada. Reintentable con token nuevo.
-    throw new Error(`SUNARP cod=${resp.cod}: ${resp.mensaje || 'sin resultado'}`)
+    // cod != 1 puede ser captcha/token rechazado (REINTENTABLE con token nuevo) o
+    // placa inexistente (PERMANENTE: reintentar solo malgasta Turnstile, el captcha
+    // más caro). Distinguimos por el mensaje para cortar rápido en el caso permanente.
+    const msg = resp.mensaje || 'sin resultado'
+    const err = new Error(`SUNARP cod=${resp.cod}: ${msg}`)
+    if (/no se ha encontrado|no se encontr|no existe|sin registro/i.test(msg)) {
+      err.permanent = true
+    }
+    throw err
   }
   const model = resp.model || {}
   if (!model.imagen) throw new Error('SUNARP: respuesta sin imagen de datos')
@@ -204,7 +211,8 @@ export function consultarSunarpReal(plate) {
         return await intentar(plate)
       } catch (err) {
         lastErr = err
-        if (attempt === max) break
+        // Error permanente (placa inexistente) → no reintentar: ahorra Turnstile.
+        if (err.permanent || attempt === max) break
         console.warn(`[sunarp] intento ${attempt}/${max} falló: ${err.message}`)
         await backoff(attempt)
       }
