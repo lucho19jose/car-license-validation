@@ -106,9 +106,11 @@ async function intentar(plate) {
     // Esperar el data URI antes de leerlo (si no, 2captcha recibiría un src vacío).
     const src = await esperarDataUri(page.locator(SEL.captchaImg), page)
     const b64 = src.includes(',') ? src.split(',')[1].trim() : src
-    // 2captcha a veces devuelve espacios; saneamos. Si queda vacío, no enviamos un
-    // submit garantizado-incorrecto: lanzamos error reintentable (captcha nuevo).
-    const solution = (await solveImageCaptcha(b64)).replace(/\s+/g, '')
+    // El captcha de MTC es numérico → se lo decimos a 2captcha (numeric=1) para que
+    // el trabajador solo ingrese dígitos: ataca la causa de las malas lecturas (antes
+    // devolvía letras). 2captcha a veces añade espacios; saneamos. Si queda vacío, no
+    // enviamos un submit garantizado-incorrecto: lanzamos error reintentable.
+    const solution = (await solveImageCaptcha(b64, { numeric: 1 })).replace(/\s+/g, '')
     if (!solution) throw new Error('captcha: 2captcha devolvió solución vacía')
     // El captcha de MTC es SIEMPRE numérico; si 2captcha devolvió letras es una mala
     // lectura garantizada (visto en diagnóstico) → pedimos uno nuevo sin gastar el submit.

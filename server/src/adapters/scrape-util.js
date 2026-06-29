@@ -6,8 +6,10 @@ export const normLabel = (s) =>
   (s || '').toUpperCase().replace(/\s+/g, ' ').replace(/:$/, '').trim()
 
 // ¿El error vale la pena reintentarlo? (captcha mal resuelto o fallo transitorio)
+// Incluye status HTTP transitorios: 429 (rate-limit del portal) y 502/503/504
+// (caídas momentáneas del backend) → reintentar con backoff en vez de tumbar la fuente.
 export function isRetryable(err) {
-  return /captcha|timeout|net::|ECONN|ETIMEDOUT|socket|navigation|target closed/i.test(
+  return /captcha|timeout|net::|ECONN|ETIMEDOUT|socket|navigation|target closed|status (?:429|50[234])/i.test(
     err?.message || ''
   )
 }

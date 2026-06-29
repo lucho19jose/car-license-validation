@@ -55,8 +55,11 @@ function labelToField(label) {
   return null
 }
 
-// VIN/SERIE: el estándar ISO no usa O, I ni Q → corregimos confusiones típicas del OCR.
-const fixVin = (s) => (s || '').toUpperCase().replace(/O/g, '0').replace(/[IQ]/g, (c) => (c === 'I' ? '1' : '0')).replace(/\s/g, '')
+// VIN/SERIE: el estándar ISO no usa O, I ni Q → corregimos confusiones típicas del
+// OCR; luego quitamos cualquier carácter no alfanumérico (espacios y símbolos
+// espurios de la marca de agua, p.ej. "1)J4GR…" → "1J4GR…").
+const fixVin = (s) =>
+  (s || '').toUpperCase().replace(/O/g, '0').replace(/[IQ]/g, (c) => (c === 'I' ? '1' : '0')).replace(/[^A-Z0-9]/g, '')
 
 // N° de motor: alfanumérico (+ guion). El OCR a veces inserta símbolos sobre la marca
 // de agua (p.ej. "4E€1485377" → "4E1485377"); quitamos lo que no sea [A-Z0-9-].

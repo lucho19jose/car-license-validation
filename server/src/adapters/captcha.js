@@ -49,12 +49,19 @@ async function poll(key, id, { timeoutMs = 120000, intervalMs = 5000 } = {}) {
 }
 
 // Resuelve un captcha de imagen. `base64` es la imagen del captcha (sin prefijo data:).
-export async function solveImageCaptcha(base64) {
+// opts (pistas que mejoran la precisión del trabajador de 2captcha):
+//   numeric: 1 = solo números, 2 = solo letras, 3 = números o letras, 4 = ambos.
+//   minLen / maxLen: longitud esperada de la solución.
+export async function solveImageCaptcha(base64, opts = {}) {
   const key = requireKey()
+  const params = { key, method: 'base64', body: base64, json: '1' }
+  if (opts.numeric != null) params.numeric = String(opts.numeric)
+  if (opts.minLen != null) params.min_len = String(opts.minLen)
+  if (opts.maxLen != null) params.max_len = String(opts.maxLen)
   const r = await fetchJson(IN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ key, method: 'base64', body: base64, json: '1' }),
+    body: new URLSearchParams(params),
   })
   if (r.status !== 1) throw new Error('2captcha in error: ' + r.request)
   return poll(key, r.request)
