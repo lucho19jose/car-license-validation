@@ -7,6 +7,7 @@ import { resolverMtc } from '../src/adapters/mtc.real.js'
 const DOC = { PLACA: 'TEST123', NRO_CERTI: 'C-1', RESULTADO: 'APROBADO', ESTADO: 'VIGENTE' }
 const ERR_RETRY = () => { throw new Error('captcha: MTC rechazó el captcha (orStatus=false)') }
 const ERR_FATAL = () => { throw new Error('boom no reintentable') }
+const ERR_429 = () => { const e = new Error('MTC API status 429'); e.rateLimited = true; throw e }
 const wait = () => Promise.resolve() // sin backoff real → test instantáneo
 
 // Construye un `intentar` que sigue `seq` (cada paso: array de docs, ERR_RETRY o
@@ -62,6 +63,16 @@ const cases = [
     name: 'error no reintentable → corta de inmediato (1 sola pasada)',
     seq: [ERR_FATAL, [DOC]], opts: { max: 5, needEmpty: 2 },
     expect: null, throwCalls: 1,
+  },
+  {
+    name: '429 sostenido → tolera maxRateLimit=1 y abandona (no agota los 5 intentos)',
+    seq: [ERR_429, ERR_429, ERR_429, ERR_429, ERR_429], opts: { max: 5, needEmpty: 2, maxRateLimit: 1 },
+    expect: null, throwCalls: 2, // 1er 429 reintenta, 2º supera el tope → break
+  },
+  {
+    name: '429 puntual y luego datos → se recupera (no abandona al 1er 429)',
+    seq: [ERR_429, [DOC]], opts: { max: 5, needEmpty: 2, maxRateLimit: 1 },
+    expect: (r, calls) => r.result === 'APROBADO' && calls === 2,
   },
 ]
 

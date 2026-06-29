@@ -38,6 +38,7 @@ export function consultarMtcReal(plate) {
     resolverMtc((attempt) => intentar(plate, attempt), {
       max: config.mtc.maxCaptchaAttempts,
       needEmpty: Math.max(1, config.mtc.confirmEmpty),
+      maxRateLimit: config.mtc.maxRateLimitRetries,
     })
   )
 }
@@ -49,9 +50,10 @@ export function consultarMtcReal(plate) {
 //  · docs vacío (orStatus=true) → "sin CITV", pero se CONFIRMA con `needEmpty`
 //    pasadas independientes antes de declararlo (evita falso N/D por captcha).
 //  · error reintentable         → backoff y otra pasada (hasta `max`).
-export async function resolverMtc(intentar, { max, needEmpty, wait = backoff }) {
+export async function resolverMtc(intentar, { max, needEmpty, maxRateLimit = 1, wait = backoff }) {
   let lastErr
   let emptyHits = 0 // nº de pasadas con captcha válido (orStatus=true) que dieron vacío
+  let rateLimitHits = 0 // nº de 429 (rate-limit) recibidos
   for (let i = 1; i <= max; i++) {
     try {
       const docs = await intentar(i)
@@ -63,6 +65,12 @@ export async function resolverMtc(intentar, { max, needEmpty, wait = backoff }) 
       await wait(i)
     } catch (err) {
       lastErr = err
+      // Rate-limit (429): cada reintento gasta un captcha contra un throttle que no
+      // cede en segundos. Toleramos `maxRateLimit` (por si fue un pico) y abandonamos.
+      if (err.rateLimited && ++rateLimitHits > maxRateLimit) {
+        console.warn(`[mtc] rate-limit (429) sostenido (${rateLimitHits} hits) — abandono para no malgastar captchas`)
+        break
+      }
       if (!isRetryable(err) || i === max) break
       console.warn(`[mtc] intento ${i}/${max} falló: ${err.message}`)
       await wait(i)
@@ -131,7 +139,13 @@ async function intentar(plate) {
     } catch {
       throw new Error('captcha: MTC no devolvió resultados (captcha incorrecto?)')
     }
-    if (!resp.ok()) throw new Error('MTC API status ' + resp.status())
+    if (!resp.ok()) {
+      const err = new Error('MTC API status ' + resp.status())
+      // 429 = rate-limit del portal: sostenido, no cede en segundos. Lo marcamos para
+      // que el orquestador NO siga gastando captchas reintentándolo en vano.
+      if (resp.status() === 429) err.rateLimited = true
+      throw err
+    }
 
     const payload = await resp.json()
     // El captcha correcto hace orStatus=true; uno incorrecto, orStatus=false/null.

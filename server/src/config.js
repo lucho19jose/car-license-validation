@@ -75,6 +75,9 @@ export const config = {
     // "sin CITV". Evita un falso N/D si un captcha mal resuelto colara una lista
     // vacía. 1 = confiar en orStatus sin confirmar (más barato, 1 captcha menos).
     confirmEmpty: parseInt(process.env.MTC_CONFIRM_EMPTY || '2', 10),
+    // Cuántos 429 (rate-limit) toleramos antes de abandonar. Un throttle sostenido
+    // no cede en segundos, así que reintentarlo solo malgasta captchas → tope bajo.
+    maxRateLimitRetries: parseInt(process.env.MTC_RATELIMIT_RETRIES || '1', 10),
   },
 
   paths: {
